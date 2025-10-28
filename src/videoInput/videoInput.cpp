@@ -6,6 +6,8 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 //THE SOFTWARE.
 #include  <iostream>
+#include <string>
+#include <cstring>
 
 #include "videoInput/videoInput.h"
 #include "cinder/msw/CinderMsw.h"
@@ -251,8 +253,9 @@ videoDevice::videoDevice(){
 		 autoReconnect		= false;
 		 requestedFrameTime = -1;
 		 
-		 memset(wDeviceName, 0, sizeof(WCHAR) * 255);
-		 memset(nDeviceName, 0, sizeof(char) * 255);
+		 memset(wDeviceName, 0, sizeof(WCHAR) * VI_MAX_DEVICE_NAME_LEN);
+		 memset(nDeviceName, 0, sizeof(char) * VI_MAX_DEVICE_NAME_LEN);
+		 memset(uniqueId, 0, sizeof(uniqueId));
 	     
 }
 
@@ -538,26 +541,28 @@ videoInput::videoInput(){
 	//The video types we support
 	//in order of preference
 	
-	mediaSubtypes[0] 	= MEDIASUBTYPE_RGB24;
-	mediaSubtypes[1] 	= MEDIASUBTYPE_RGB32;
-	mediaSubtypes[2] 	= MEDIASUBTYPE_RGB555;
-	mediaSubtypes[3] 	= MEDIASUBTYPE_RGB565;
-	mediaSubtypes[4] 	= MEDIASUBTYPE_YUY2;
-	mediaSubtypes[5] 	= MEDIASUBTYPE_YVYU;
-	mediaSubtypes[6] 	= MEDIASUBTYPE_YUYV;
-	mediaSubtypes[7] 	= MEDIASUBTYPE_IYUV;
-	mediaSubtypes[8] 	= MEDIASUBTYPE_UYVY;
-	mediaSubtypes[9] 	= MEDIASUBTYPE_YV12;
-	mediaSubtypes[10]	= MEDIASUBTYPE_YVU9;
-	mediaSubtypes[11] 	= MEDIASUBTYPE_Y411;
-	mediaSubtypes[12] 	= MEDIASUBTYPE_Y41P;
-	mediaSubtypes[13] 	= MEDIASUBTYPE_Y211;
-	mediaSubtypes[14]	= MEDIASUBTYPE_AYUV;
+	int i = 0;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_RGB24;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_RGB32;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_RGB555;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_RGB565;
+	mediaSubtypes[i++] = MEDIASUBTYPE_MJPG;
+ 	mediaSubtypes[i++] 	= MEDIASUBTYPE_YUY2;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_YVYU;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_YUYV;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_IYUV;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_UYVY;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_YV12;
+	mediaSubtypes[i++]	= MEDIASUBTYPE_YVU9;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_Y411;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_Y41P;
+	mediaSubtypes[i++] 	= MEDIASUBTYPE_Y211;
+	mediaSubtypes[i++]	= MEDIASUBTYPE_AYUV;
 
 	//non standard
-	mediaSubtypes[15]	= MEDIASUBTYPE_Y800;
-    mediaSubtypes[16]	= MEDIASUBTYPE_Y8;
-	mediaSubtypes[17]	= MEDIASUBTYPE_GREY;	
+	mediaSubtypes[i++]	= MEDIASUBTYPE_Y800;
+    mediaSubtypes[i++]	= MEDIASUBTYPE_Y8;
+	mediaSubtypes[i++]	= MEDIASUBTYPE_GREY;
 	
 	//The video formats we support
 	formatTypes[VI_NTSC_M]		= AnalogVideo_NTSC_M;
@@ -711,6 +716,43 @@ bool videoInput::setupDevice(int deviceNumber, int w, int h, PhysicalConnectorTy
 }
 
 
+bool videoInput::setupDevice(const std::string &deviceUniqueId){
+	int deviceIndex = getDeviceIndexForUniqueId(deviceUniqueId);
+	if(deviceIndex < 0){
+		if(verbose)printf("SETUP: device with unique ID %s not found\n", deviceUniqueId.c_str());
+		return false;
+	}
+	return setupDevice(deviceIndex);
+}
+
+bool videoInput::setupDevice(const std::string &deviceUniqueId, int w, int h){
+	int deviceIndex = getDeviceIndexForUniqueId(deviceUniqueId);
+	if(deviceIndex < 0){
+		if(verbose)printf("SETUP: device with unique ID %s not found\n", deviceUniqueId.c_str());
+		return false;
+	}
+	return setupDevice(deviceIndex, w, h);
+}
+
+bool videoInput::setupDevice(const std::string &deviceUniqueId, PhysicalConnectorType connection){
+	int deviceIndex = getDeviceIndexForUniqueId(deviceUniqueId);
+	if(deviceIndex < 0){
+		if(verbose)printf("SETUP: device with unique ID %s not found\n", deviceUniqueId.c_str());
+		return false;
+	}
+	return setupDevice(deviceIndex, connection);
+}
+
+bool videoInput::setupDevice(const std::string &deviceUniqueId, int w, int h, PhysicalConnectorType connection){
+	int deviceIndex = getDeviceIndexForUniqueId(deviceUniqueId);
+	if(deviceIndex < 0){
+		if(verbose)printf("SETUP: device with unique ID %s not found\n", deviceUniqueId.c_str());
+		return false;
+	}
+	return setupDevice(deviceIndex, w, h, connection);
+}
+
+
 // ---------------------------------------------------------------------- 
 // Setup the default video format of the device
 // Must be called after setup!
@@ -729,7 +771,7 @@ bool videoInput::setFormat(int deviceNumber, int format){
 		
 		if(VDList[deviceNumber]->specificFormat){
 		
-			HRESULT hr = getDevice(&VDList[deviceNumber]->pVideoInputFilter, deviceNumber, VDList[deviceNumber]->wDeviceName, VDList[deviceNumber]->nDeviceName);
+			HRESULT hr = getDevice(&VDList[deviceNumber]->pVideoInputFilter, deviceNumber, VDList[deviceNumber]->wDeviceName, VDList[deviceNumber]->nDeviceName, VDList[deviceNumber]->uniqueId, VI_MAX_DEVICE_UNIQUE_ID_LEN);
 			if(hr != S_OK){
 				return false;
 			}
@@ -770,7 +812,8 @@ bool videoInput::setFormat(int deviceNumber, int format){
 // Must call listDevices first.
 //                                           
 // ---------------------------------------------------------------------- 
-char videoInput::deviceNames[VI_MAX_CAMERAS][255]={{0}};
+char videoInput::deviceNames[VI_MAX_CAMERAS][VI_MAX_DEVICE_NAME_LEN]={{0}};
+char videoInput::deviceUniqueIds[VI_MAX_CAMERAS][VI_MAX_DEVICE_UNIQUE_ID_LEN]={{0}};
 
 char * videoInput::getDeviceName(int deviceID){
 	if( deviceID >= VI_MAX_CAMERAS ){
@@ -779,6 +822,29 @@ char * videoInput::getDeviceName(int deviceID){
 	return deviceNames[deviceID];
 }
 
+
+const char * videoInput::getDeviceUniqueId(int deviceID){
+	if( deviceID >= VI_MAX_CAMERAS ){
+		return NULL;
+	}
+	return deviceUniqueIds[deviceID];
+}
+
+int videoInput::getDeviceIndexForUniqueId(const std::string &deviceUniqueId){
+	if(deviceUniqueId.empty()){
+		return -1;
+	}
+	int deviceCount = listDevices(true);
+	for(int i = 0; i < deviceCount && i < VI_MAX_CAMERAS; ++i){
+		if(deviceUniqueIds[i][0] == 0){
+			continue;
+		}
+		if(deviceUniqueId == deviceUniqueIds[i]){
+			return i;
+		}
+	}
+	return -1;
+}
 
 // ---------------------------------------------------------------------- 
 // Our static function for finding num devices available etc
@@ -796,6 +862,9 @@ int videoInput::listDevices(bool silent){
 	ICreateDevEnum *pDevEnum = NULL;
 	IEnumMoniker *pEnum = NULL;	
 	int deviceCounter = 0;
+
+	memset(deviceNames, 0, sizeof(deviceNames));
+	memset(deviceUniqueIds, 0, sizeof(deviceUniqueIds));
 	
 	HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL,
 	    CLSCTX_INPROC_SERVER, IID_ICreateDevEnum, 
@@ -824,8 +893,18 @@ int videoInput::listDevices(bool silent){
 			        pMoniker->Release();
 			        continue;  // Skip this one, maybe the next one will work.
 			    } 
+
+			    if(deviceCounter >= VI_MAX_CAMERAS){
+			    	pPropBag->Release();
+			    	pPropBag = NULL;
+			    	pMoniker->Release();
+			    	pMoniker = NULL;
+			    	break;
+			    }
 			    
-			    
+			    deviceNames[deviceCounter][0] = 0;
+			    deviceUniqueIds[deviceCounter][0] = 0;
+
  				// Find the description or friendly name.
 			    VARIANT varName;
 			    VariantInit(&varName);
@@ -833,12 +912,11 @@ int videoInput::listDevices(bool silent){
 		    			    
 			    if (FAILED(hr)) hr = pPropBag->Read(L"FriendlyName", &varName, 0);
 			  
-			    if (SUCCEEDED(hr)){
-			    
+			    if (SUCCEEDED(hr) && varName.vt == VT_BSTR && varName.bstrVal != NULL){
 			    	hr = pPropBag->Read(L"FriendlyName", &varName, 0);
 			     	
 					int count = 0;
-					int maxLen = sizeof(deviceNames[0])/sizeof(deviceNames[0][0]) - 2;
+					int maxLen = VI_MAX_DEVICE_NAME_LEN - 1;
 					while( varName.bstrVal[count] != 0x00 && count < maxLen) {
 						deviceNames[deviceCounter][count] = (char)varName.bstrVal[count];
 						count++;
@@ -846,6 +924,55 @@ int videoInput::listDevices(bool silent){
 					deviceNames[deviceCounter][count] = 0;
 			                          
 			        if(!silent)printf("SETUP: %i) %s \n",deviceCounter, deviceNames[deviceCounter]);
+			    }
+			    VariantClear(&varName);
+
+			    VARIANT varPath;
+			    VariantInit(&varPath);
+			    hr = pPropBag->Read(L"DevicePath", &varPath, 0);
+			    if (SUCCEEDED(hr) && varPath.vt == VT_BSTR && varPath.bstrVal != NULL){
+			    	int copied = WideCharToMultiByte(CP_UTF8, 0, varPath.bstrVal, -1, deviceUniqueIds[deviceCounter], VI_MAX_DEVICE_UNIQUE_ID_LEN, NULL, NULL);
+			    	if(copied == 0){
+			    		deviceUniqueIds[deviceCounter][0] = 0;
+			    	}
+			    }
+			    VariantClear(&varPath);
+
+			    if(deviceUniqueIds[deviceCounter][0] == 0){
+			    	LPOLESTR pDisplayName = NULL;
+			    	if (SUCCEEDED(pMoniker->GetDisplayName(NULL, NULL, &pDisplayName))){
+			    		int copied = WideCharToMultiByte(CP_UTF8, 0, pDisplayName, -1, deviceUniqueIds[deviceCounter], VI_MAX_DEVICE_UNIQUE_ID_LEN, NULL, NULL);
+			    		if(copied == 0){
+			    			deviceUniqueIds[deviceCounter][0] = 0;
+			    		}
+			    		CoTaskMemFree(pDisplayName);
+			    	}
+			    }
+
+			    if(deviceUniqueIds[deviceCounter][0] == 0){
+			    	int len = 0;
+			    	while(deviceNames[deviceCounter][len] != 0 && len < VI_MAX_DEVICE_UNIQUE_ID_LEN - 1){
+			    		deviceUniqueIds[deviceCounter][len] = deviceNames[deviceCounter][len];
+			    		len++;
+			    	}
+			    	if(len < VI_MAX_DEVICE_UNIQUE_ID_LEN - 2){
+			    		deviceUniqueIds[deviceCounter][len++] = '#';
+			    		int idx = deviceCounter;
+			    		char digits[16];
+			    		int digitCount = 0;
+			    		if(idx == 0){
+			    			digits[digitCount++] = '0';
+			    		}else{
+			    			while(idx > 0 && digitCount < (int)sizeof(digits)){
+			    				digits[digitCount++] = (char)('0' + (idx % 10));
+			    				idx /= 10;
+			    			}
+			    		}
+			    		while(digitCount > 0 && len < VI_MAX_DEVICE_UNIQUE_ID_LEN - 1){
+			    			deviceUniqueIds[deviceCounter][len++] = digits[--digitCount];
+			    		}
+			    	}
+			    	deviceUniqueIds[deviceCounter][len] = 0;
 			    }
 			    
 			    pPropBag->Release();
@@ -1095,7 +1222,7 @@ void videoInput::showSettingsWindow(int id){
 		//we reconnect to the device as we have freed our reference to it
 		//why have we freed our reference? because there seemed to be an issue 
 		//with some mpeg devices if we didn't
-		HRESULT hr = getDevice(&VDList[id]->pVideoInputFilter, id, VDList[id]->wDeviceName, VDList[id]->nDeviceName);
+		HRESULT hr = getDevice(&VDList[id]->pVideoInputFilter, id, VDList[id]->wDeviceName, VDList[id]->nDeviceName, VDList[id]->uniqueId, VI_MAX_DEVICE_UNIQUE_ID_LEN);
 		if(hr == S_OK){
 			myTempThread = (HANDLE)_beginthread(basicThread, 0, (void *)&VDList[id]);  
 		}
@@ -1112,7 +1239,7 @@ bool videoInput::getVideoSettingFilter(int deviceID, long Property, long &min, l
 	
 	videoDevice * VD = VDList[deviceID];
 	
-	hr = getDevice(&VD->pVideoInputFilter, deviceID, VD->wDeviceName, VD->nDeviceName);	
+	hr = getDevice(&VD->pVideoInputFilter, deviceID, VD->wDeviceName, VD->nDeviceName, VD->uniqueId, VI_MAX_DEVICE_UNIQUE_ID_LEN);	
 	if (FAILED(hr)){
 		printf("setVideoSetting - getDevice Error\n");
 		return false;
@@ -1188,7 +1315,7 @@ bool videoInput::setVideoSettingFilter(int deviceID, long Property, long lValue,
 	
 	videoDevice * VD = VDList[deviceID];
 	
-	hr = getDevice(&VD->pVideoInputFilter, deviceID, VD->wDeviceName, VD->nDeviceName);	
+	hr = getDevice(&VD->pVideoInputFilter, deviceID, VD->wDeviceName, VD->nDeviceName, VD->uniqueId, VI_MAX_DEVICE_UNIQUE_ID_LEN);	
 	if (FAILED(hr)){
 		printf("setVideoSetting - getDevice Error\n");
 		return false;
@@ -1271,7 +1398,7 @@ bool videoInput::setVideoSettingCamera(int deviceID, long Property, long lValue,
 	if(isDeviceSetup(deviceID))
 	{
 		HRESULT hr;
-		hr = getDevice(&VDList[deviceID]->pVideoInputFilter, deviceID, VDList[deviceID]->wDeviceName, VDList[deviceID]->nDeviceName);	
+		hr = getDevice(&VDList[deviceID]->pVideoInputFilter, deviceID, VDList[deviceID]->wDeviceName, VDList[deviceID]->nDeviceName, VDList[deviceID]->uniqueId, VI_MAX_DEVICE_UNIQUE_ID_LEN);	
 	
 		if (verbose) printf("Setting video setting %ld.\n", Property);
 		hr = VDList[deviceID]->pVideoInputFilter->QueryInterface(IID_IAMCameraControl, (void**)&pIAMCameraControl);
@@ -1311,7 +1438,7 @@ bool videoInput::getVideoSettingCamera(int deviceID, long Property, long &min, l
 	
 	videoDevice * VD = VDList[deviceID];
 	
-	hr = getDevice(&VD->pVideoInputFilter, deviceID, VD->wDeviceName, VD->nDeviceName);	
+	hr = getDevice(&VD->pVideoInputFilter, deviceID, VD->wDeviceName, VD->nDeviceName, VD->uniqueId, VI_MAX_DEVICE_UNIQUE_ID_LEN);	
 	if (FAILED(hr)){
 		printf("setVideoSetting - getDevice Error\n");
 		return false;
@@ -1605,24 +1732,25 @@ void videoInput::processPixels(unsigned char * src, unsigned char * dst, int wid
 void videoInput::getMediaSubtypeAsString(GUID type, char * typeAsString){
 	static const int maxStr = 8;
 	char tmpStr[maxStr];
-	if( type == MEDIASUBTYPE_RGB24) strncpy(tmpStr, "RGB24", maxStr);
-	else if(type == MEDIASUBTYPE_RGB32) strncpy(tmpStr, "RGB32", maxStr);
-	else if(type == MEDIASUBTYPE_RGB555)strncpy(tmpStr, "RGB555", maxStr);
-	else if(type == MEDIASUBTYPE_RGB565)strncpy(tmpStr, "RGB565", maxStr);					
-	else if(type == MEDIASUBTYPE_YUY2) 	strncpy(tmpStr, "YUY2", maxStr);
-	else if(type == MEDIASUBTYPE_YVYU) 	strncpy(tmpStr, "YVYU", maxStr);
-	else if(type == MEDIASUBTYPE_YUYV) 	strncpy(tmpStr, "YUYV", maxStr);
-	else if(type == MEDIASUBTYPE_IYUV) 	strncpy(tmpStr, "IYUV", maxStr);
-	else if(type == MEDIASUBTYPE_UYVY)  strncpy(tmpStr, "UYVY", maxStr);
-	else if(type == MEDIASUBTYPE_YV12)  strncpy(tmpStr, "YV12", maxStr);
-	else if(type == MEDIASUBTYPE_YVU9)  strncpy(tmpStr, "YVU9", maxStr);
-	else if(type == MEDIASUBTYPE_Y411) 	strncpy(tmpStr, "Y411", maxStr);
-	else if(type == MEDIASUBTYPE_Y41P) 	strncpy(tmpStr, "Y41P", maxStr);
-	else if(type == MEDIASUBTYPE_Y211)  strncpy(tmpStr, "Y211", maxStr);
-	else if(type == MEDIASUBTYPE_AYUV) 	strncpy(tmpStr, "AYUV", maxStr);
-	else if(type == MEDIASUBTYPE_Y800) 	strncpy(tmpStr, "Y800", maxStr);  
-	else if(type == MEDIASUBTYPE_Y8)   	strncpy(tmpStr, "Y8", maxStr);  
-	else if(type == MEDIASUBTYPE_GREY) 	strncpy(tmpStr, "GREY", maxStr);  
+	if (type == MEDIASUBTYPE_RGB24) strncpy(tmpStr, "RGB24", maxStr);
+	else if (type == MEDIASUBTYPE_RGB32) strncpy(tmpStr, "RGB32", maxStr);
+	else if (type == MEDIASUBTYPE_RGB555)strncpy(tmpStr, "RGB555", maxStr);
+	else if (type == MEDIASUBTYPE_RGB565)strncpy(tmpStr, "RGB565", maxStr);
+	else if (type == MEDIASUBTYPE_YUY2) 	strncpy(tmpStr, "YUY2", maxStr);
+	else if (type == MEDIASUBTYPE_YVYU) 	strncpy(tmpStr, "YVYU", maxStr);
+	else if (type == MEDIASUBTYPE_YUYV) 	strncpy(tmpStr, "YUYV", maxStr);
+	else if (type == MEDIASUBTYPE_IYUV) 	strncpy(tmpStr, "IYUV", maxStr);
+	else if (type == MEDIASUBTYPE_UYVY)  strncpy(tmpStr, "UYVY", maxStr);
+	else if (type == MEDIASUBTYPE_YV12)  strncpy(tmpStr, "YV12", maxStr);
+	else if (type == MEDIASUBTYPE_YVU9)  strncpy(tmpStr, "YVU9", maxStr);
+	else if (type == MEDIASUBTYPE_Y411) 	strncpy(tmpStr, "Y411", maxStr);
+	else if (type == MEDIASUBTYPE_Y41P) 	strncpy(tmpStr, "Y41P", maxStr);
+	else if (type == MEDIASUBTYPE_Y211)  strncpy(tmpStr, "Y211", maxStr);
+	else if (type == MEDIASUBTYPE_AYUV) 	strncpy(tmpStr, "AYUV", maxStr);
+	else if (type == MEDIASUBTYPE_Y800) 	strncpy(tmpStr, "Y800", maxStr);
+	else if (type == MEDIASUBTYPE_Y8)   	strncpy(tmpStr, "Y8", maxStr);
+	else if (type == MEDIASUBTYPE_GREY) 	strncpy(tmpStr, "GREY", maxStr);
+	else if (type == MEDIASUBTYPE_MJPG) strncpy(tmpStr, "MJPG", maxStr);
 	else strncpy(tmpStr, "OTHER", maxStr);
 
 	memcpy(typeAsString, tmpStr, sizeof(char)*8);
@@ -1826,7 +1954,7 @@ int videoInput::start(int deviceID, videoDevice *VD){
     
 	//FIND VIDEO DEVICE AND ADD TO GRAPH//
 	//gets the device specified by the second argument.  
-	hr = getDevice(&VD->pVideoInputFilter, deviceID, VD->wDeviceName, VD->nDeviceName);
+	hr = getDevice(&VD->pVideoInputFilter, deviceID, VD->wDeviceName, VD->nDeviceName, VD->uniqueId, VI_MAX_DEVICE_UNIQUE_ID_LEN);
 
 	if (SUCCEEDED(hr)){
 		if(verbose)printf("SETUP: %s\n", VD->nDeviceName);
@@ -2088,54 +2216,7 @@ int videoInput::start(int deviceID, videoDevice *VD){
 // ---------------------------------------------------------------------- 
 
 int videoInput::getDeviceCount(){  
-
-    	
-	ICreateDevEnum *pDevEnum = NULL;
-	IEnumMoniker *pEnum = NULL;	
-	int deviceCounter = 0;
-	
-	HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, NULL,
-	    CLSCTX_INPROC_SERVER, IID_ICreateDevEnum, 
-	    reinterpret_cast<void**>(&pDevEnum));
-	    
-	    
-	if (SUCCEEDED(hr))
-	{
-	    // Create an enumerator for the video capture category.
-	    hr = pDevEnum->CreateClassEnumerator(
-	    	CLSID_VideoInputDeviceCategory,
-	        &pEnum, 0);
-	        
-	   if(hr == S_OK){
-			IMoniker *pMoniker = NULL;
-			while (pEnum->Next(1, &pMoniker, NULL) == S_OK){
-			    
-			    IPropertyBag *pPropBag;
-			    hr = pMoniker->BindToStorage(0, 0, IID_IPropertyBag, 
-			        (void**)(&pPropBag));
-			        
-			    if (FAILED(hr)){
-			        pMoniker->Release();
-			        continue;  // Skip this one, maybe the next one will work.
-			    } 
-			 
-			    pPropBag->Release();
-			    pPropBag = NULL;
-			    
-			    pMoniker->Release();
-			    pMoniker = NULL;
-			    
-			    deviceCounter++;
-			}   
-
-			pEnum->Release();
-			pEnum = NULL;
-		}
-
-		pDevEnum->Release();
-		pDevEnum = NULL;
-	}
-	return deviceCounter;	
+	return listDevices(true);
 }
    
 
@@ -2146,9 +2227,13 @@ int videoInput::getDeviceCount(){
 // Return the filter with a matching friendly name                               
 // ----------------------------------------------------------------------   
 
-HRESULT videoInput::getDevice(IBaseFilter** gottaFilter, int deviceId, WCHAR * wDeviceName, char * nDeviceName){
+HRESULT videoInput::getDevice(IBaseFilter** gottaFilter, int deviceId, WCHAR * wDeviceName, char * nDeviceName, char * uniqueIdBuffer, int uniqueIdBufferLength){
 	BOOL done = false;
 	int deviceCounter = 0;
+
+	if(wDeviceName) wDeviceName[0] = 0;
+	if(nDeviceName) nDeviceName[0] = 0;
+	if(uniqueIdBuffer && uniqueIdBufferLength > 0) uniqueIdBuffer[0] = 0;
 
 	// Create the System Device Enumerator.
 	ICreateDevEnum *pSysDevEnum = NULL;
@@ -2180,16 +2265,68 @@ HRESULT videoInput::getDevice(IBaseFilter** gottaFilter, int deviceId, WCHAR * w
 					VARIANT varName;
 					VariantInit(&varName);
 					hr = pPropBag->Read(L"FriendlyName", &varName, 0);
-					if (SUCCEEDED(hr))
+					if (SUCCEEDED(hr) && varName.vt == VT_BSTR && varName.bstrVal != NULL)
 					{		
 						
 						//copy the name to nDeviceName & wDeviceName
 						int count = 0;
-						while( varName.bstrVal[count] != 0x00 ) {
+						int maxLen = VI_MAX_DEVICE_NAME_LEN - 1;
+						while( varName.bstrVal[count] != 0x00 && count < maxLen) {
 	                  		 wDeviceName[count] = varName.bstrVal[count];
 	                  		 nDeviceName[count] = (char)varName.bstrVal[count];
 	                  		 count++;
 	                 	}
+	                	wDeviceName[count] = 0;
+	                	nDeviceName[count] = 0;
+
+	                	if(uniqueIdBuffer && uniqueIdBufferLength > 0){
+	                		uniqueIdBuffer[0] = 0;
+	                		VARIANT varPath;
+	                		VariantInit(&varPath);
+	                		HRESULT hrPath = pPropBag->Read(L"DevicePath", &varPath, 0);
+	                		if(SUCCEEDED(hrPath) && varPath.vt == VT_BSTR && varPath.bstrVal != NULL){
+	                			int copied = WideCharToMultiByte(CP_UTF8, 0, varPath.bstrVal, -1, uniqueIdBuffer, uniqueIdBufferLength, NULL, NULL);
+	                			if(copied == 0){
+	                				uniqueIdBuffer[0] = 0;
+	                			}
+	                		}
+	                		VariantClear(&varPath);
+	                		if(uniqueIdBuffer[0] == 0){
+	                			LPOLESTR pDisplayName = NULL;
+	                			if(SUCCEEDED(pMoniker->GetDisplayName(NULL, NULL, &pDisplayName))){
+	                				int copied = WideCharToMultiByte(CP_UTF8, 0, pDisplayName, -1, uniqueIdBuffer, uniqueIdBufferLength, NULL, NULL);
+	                				if(copied == 0){
+	                					uniqueIdBuffer[0] = 0;
+	                				}
+	                				CoTaskMemFree(pDisplayName);
+	                			}
+	                		}
+	                		if(uniqueIdBuffer[0] == 0){
+	                			int len = 0;
+	                			while(nDeviceName[len] != 0 && len < uniqueIdBufferLength - 1){
+	                				uniqueIdBuffer[len] = nDeviceName[len];
+	                				len++;
+	                			}
+	                			if(len < uniqueIdBufferLength - 2){
+	                				uniqueIdBuffer[len++] = '#';
+	                				int idx = deviceId;
+	                				char digits[16];
+	                				int digitCount = 0;
+	                				if(idx == 0){
+	                					digits[digitCount++] = '0';
+	                				}else{
+	                					while(idx > 0 && digitCount < (int)sizeof(digits)){
+	                						digits[digitCount++] = (char)('0' + (idx % 10));
+	                						idx /= 10;
+	                					}
+	                				}
+	                				while(digitCount > 0 && len < uniqueIdBufferLength - 1){
+	                					uniqueIdBuffer[len++] = digits[--digitCount];
+	                				}
+	                			}
+	                			uniqueIdBuffer[len] = 0;
+	                		}
+	                	}
 		                
 						// We found it, so send it back to the caller
 						hr = pMoniker->BindToObject(NULL, NULL, IID_IBaseFilter, (void**)gottaFilter);

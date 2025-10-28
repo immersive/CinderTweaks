@@ -26,6 +26,7 @@
 #include "cinder/Capture.h"
 #include "cinder/Surface.h"
 #include "msw/videoInput/videoInput.h"
+#include <string>
 
 namespace cinder {
 
@@ -54,19 +55,22 @@ class CaptureImplDirectShow {
 	static const std::vector<Capture::DeviceRef>&	getDevices( bool forceRefresh = false );
 
 	class Device : public Capture::Device {
- 	  public:
+	public:
+		Device(const std::string& name, const Capture::DeviceIdentifier& uniqueId) { mName = name; mUniqueId = uniqueId; }
+		Device(const std::string& name, const Capture::DeviceIdentifier& uniqueId, int windowsId) { mName = name; mUniqueId = uniqueId; mWindowsId = windowsId; }
 		bool						checkAvailable() const;
 		bool						isConnected() const;
-		Capture::DeviceIdentifier	getUniqueId() const { return mUniqueId; }
-
-		Device( const std::string &name, int uniqueId ) : Capture::Device(), mUniqueId( uniqueId ) { mName = name; }
-	 protected:
-		int				mUniqueId;
+		Capture::DeviceIdentifier	getUniqueId() const override { return mUniqueId; }
+		int							getWindowsId() const { return mWindowsId; }
+	protected:
+		Capture::DeviceIdentifier	mUniqueId;
+		int 						mWindowsId;
 	};
  protected:
 	void	init( int32_t width, int32_t height, const Capture::Device &device );
 
 	int								mDeviceID;
+	std::string						mDeviceUniqueId;
 	// this maintains a reference to the mgr so that we don't destroy it before
 	// the last Capture is destroyed
 	std::shared_ptr<class CaptureMgr>	mMgrPtr;

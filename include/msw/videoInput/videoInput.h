@@ -40,6 +40,7 @@ Thanks to:
 
 
 #include <wchar.h>
+#include <string>
 
 //this is for TryEnterCriticalSection
 #ifndef _WIN32_WINNT
@@ -125,6 +126,8 @@ static bool verbose = true;
 #define VI_MAX_CAMERAS  20
 #define VI_NUM_TYPES    18 //DON'T TOUCH
 #define VI_NUM_FORMATS  18 //DON'T TOUCH
+#define VI_MAX_DEVICE_NAME_LEN 255
+#define VI_MAX_DEVICE_UNIQUE_ID_LEN 512
 
 //defines for setPhyCon - tuner is not as well supported as composite and s-video 
 #define VI_COMPOSITE 0
@@ -223,8 +226,9 @@ class videoDevice{
 		int  myID;
 		long requestedFrameTime; //ie fps
 		
-		char 	nDeviceName[255];
-		WCHAR 	wDeviceName[255];
+		char 	nDeviceName[VI_MAX_DEVICE_NAME_LEN];
+		WCHAR 	wDeviceName[VI_MAX_DEVICE_NAME_LEN];
+		char    uniqueId[VI_MAX_DEVICE_UNIQUE_ID_LEN];
 		
 		unsigned char * pixels;
 		char * pBuffer;
@@ -252,6 +256,8 @@ class videoInput{
 
 		//needs to be called after listDevices - otherwise returns NULL
 		static char * getDeviceName(int deviceID);
+		static const char * getDeviceUniqueId(int deviceID);
+		static int getDeviceIndexForUniqueId(const std::string &deviceUniqueId);
 		
 		//choose to use callback based capture - or single threaded
 		void setUseCallback(bool useCallback);	
@@ -268,11 +274,15 @@ class videoInput{
 		//Choose one of these four to setup your device
 		bool setupDevice(int deviceID);
 		bool setupDevice(int deviceID, int w, int h);
+		bool setupDevice(const std::string &deviceUniqueId);
+		bool setupDevice(const std::string &deviceUniqueId, int w, int h);
 
 		//These two are only for capture cards
 		//USB and Firewire cameras souldn't specify connection 
 		bool setupDevice(int deviceID, PhysicalConnectorType connection);
 		bool setupDevice(int deviceID, int w, int h, PhysicalConnectorType connection);
+		bool setupDevice(const std::string &deviceUniqueId, PhysicalConnectorType connection);
+		bool setupDevice(const std::string &deviceUniqueId, int w, int h, PhysicalConnectorType connection);
 		
 		//If you need to you can set your NTSC/PAL/SECAM
 		//preference here. if it is available it will be used.
@@ -352,7 +362,7 @@ class videoInput{
 		int  getDeviceCount();
 		void getMediaSubtypeAsString(GUID type, char * typeAsString);
 		
-		HRESULT getDevice(IBaseFilter **pSrcFilter, int deviceID, WCHAR * wDeviceName, char * nDeviceName);
+		HRESULT getDevice(IBaseFilter **pSrcFilter, int deviceID, WCHAR * wDeviceName, char * nDeviceName, char * uniqueIdBuffer = NULL, int uniqueIdBufferLength = 0);
 		static HRESULT ShowFilterPropertyPages(IBaseFilter *pFilter);
 		HRESULT SaveGraphFile(IGraphBuilder *pGraph, WCHAR *wszPath);
 		HRESULT routeCrossbar(ICaptureGraphBuilder2 **ppBuild, IBaseFilter **pVidInFilter, int conType, GUID captureMode);
@@ -379,8 +389,9 @@ class videoInput{
 
 		static void __cdecl basicThread(void * objPtr);
 
-		static char deviceNames[VI_MAX_CAMERAS][255];
+		static char deviceNames[VI_MAX_CAMERAS][VI_MAX_DEVICE_NAME_LEN];
+		static char deviceUniqueIds[VI_MAX_CAMERAS][VI_MAX_DEVICE_UNIQUE_ID_LEN];
 
 }; 
-  
+ 
  #endif

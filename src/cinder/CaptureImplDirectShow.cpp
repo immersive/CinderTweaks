@@ -41,15 +41,12 @@ class CaptureMgr : private boost::noncopyable
 	static std::shared_ptr<CaptureMgr>	instance();
 	static videoInput*	instanceVI() { return instance()->mVideoInput; }
 
-	static std::shared_ptr<CaptureMgr>	sInstance;
-	static int						sTotalDevices;
+static std::shared_ptr<CaptureMgr>	sInstance;
 	
  private:	
 	videoInput			*mVideoInput;
 };
 std::shared_ptr<CaptureMgr>	CaptureMgr::sInstance;
-int							CaptureMgr::sTotalDevices = 0;
-
 CaptureMgr::CaptureMgr()
 {
 	mVideoInput = new videoInput;
@@ -116,12 +113,18 @@ class SurfaceCache {
 
 bool CaptureImplDirectShow::Device::checkAvailable() const
 {
-	return ( mUniqueId < CaptureMgr::sTotalDevices ) && ( ! CaptureMgr::instanceVI()->isDeviceSetup( mUniqueId ) );
+	int deviceIndex = videoInput::getDeviceIndexForUniqueId( mUniqueId );
+	if( deviceIndex < 0 )
+		return false;
+	return ! CaptureMgr::instanceVI()->isDeviceSetup( deviceIndex );
 }
 
 bool CaptureImplDirectShow::Device::isConnected() const
 {
-	return CaptureMgr::instanceVI()->isDeviceConnected( mUniqueId );
+	int deviceIndex = videoInput::getDeviceIndexForUniqueId( mUniqueId );
+	if( deviceIndex < 0 )
+		return false;
+	return CaptureMgr::instanceVI()->isDeviceConnected( deviceIndex );
 }
 
 const vector<Capture::DeviceRef>& CaptureImplDirectShow::getDevices( bool forceRefresh )
@@ -131,9 +134,17 @@ const vector<Capture::DeviceRef>& CaptureImplDirectShow::getDevices( bool forceR
 
 	sDevices.clear();
 
-	CaptureMgr::instance()->sTotalDevices = CaptureMgr::instanceVI()->listDevices( true );
-	for( int i = 0; i < CaptureMgr::instance()->sTotalDevices; ++i ) {
-		sDevices.push_back( Capture::DeviceRef( new CaptureImplDirectShow::Device( videoInput::getDeviceName( i ), i ) ) );
+	int totalDevices = CaptureMgr::instanceVI()->listDevices( true );
+	for( int i = 0; i < totalDevices; ++i ) {
+		const char *deviceNameCStr = videoInput::getDeviceName( i );
+		const char *deviceIdCStr = videoInput::getDeviceUniqueId( i );
+		int windowsId = videoInput::getDeviceIndexForUniqueId(deviceIdCStr ? deviceIdCStr : "");
+		std::string deviceName = deviceNameCStr ? deviceNameCStr : "";
+		std::string deviceId = deviceIdCStr ? deviceIdCStr : "";
+		if( deviceId.empty() ) {
+			deviceId = deviceName + "#" + std::to_string( i );
+		}
+		sDevices.push_back(Capture::DeviceRef(new CaptureImplDirectShow::Device(deviceName, deviceId, windowsId)));
 	}
 
 	sDevicesEnumerated = true;
@@ -141,17 +152,37 @@ const vector<Capture::DeviceRef>& CaptureImplDirectShow::getDevices( bool forceR
 }
 
 CaptureImplDirectShow::CaptureImplDirectShow(int32_t width, int32_t height, const Capture::DeviceRef device)
-	: mWidth(width), mHeight(height), mCurrentFrame(width, height, false, SurfaceChannelOrder::BGR), mDeviceID(0)
+	: mWidth(width), mHeight(height), mCurrentFrame(width, height, false, SurfaceChannelOrder::BGR), mDeviceID(0), mDeviceUniqueId()
 {
 	mDevice = device;
-	if (mDevice) {
-		mDeviceID = device->getUniqueId();
+	if( mDevice ) {
+		mDeviceUniqueId = mDevice->getUniqueId();
+	}
+
+	if( ! mDeviceUniqueId.empty() ) {
+		mDeviceID = videoInput::getDeviceIndexForUniqueId( mDeviceUniqueId );
+		if( mDeviceID < 0 )
+			throw CaptureExcInitFail();
+	}
+	else {
+		int totalDevices = CaptureMgr::instanceVI()->listDevices( true );
+		if( totalDevices <= 0 )
+			throw CaptureExcInitFail();
+		mDeviceID = 0;
+		const char *deviceIdCStr = videoInput::getDeviceUniqueId( mDeviceID );
+		if( deviceIdCStr )
+			mDeviceUniqueId = deviceIdCStr;
 	}
 
 	if (!CaptureMgr::instanceVI()->setupDevice(mDeviceID, mWidth, mHeight))
 		throw CaptureExcInitFail();
 	mWidth = CaptureMgr::instanceVI()->getWidth(mDeviceID);
 	mHeight = CaptureMgr::instanceVI()->getHeight(mDeviceID);
+	if( mDeviceUniqueId.empty() ) {
+		const char *resolvedId = videoInput::getDeviceUniqueId( mDeviceID );
+		if( resolvedId )
+			mDeviceUniqueId = resolvedId;
+	}
 	mIsCapturing = true;
 	mSurfaceCache = std::shared_ptr<SurfaceCache>(new SurfaceCache(mWidth, mHeight, SurfaceChannelOrder::BGR, 4));
 
@@ -159,17 +190,37 @@ CaptureImplDirectShow::CaptureImplDirectShow(int32_t width, int32_t height, cons
 }
 
 CaptureImplDirectShow::CaptureImplDirectShow(int32_t width, int32_t height, const Capture::DeviceRef device, PhysicalConnectorType connection)
-	: mWidth( width ), mHeight( height ), mCurrentFrame( width, height, false, SurfaceChannelOrder::BGR ), mDeviceID( 0 )
+	: mWidth( width ), mHeight( height ), mCurrentFrame( width, height, false, SurfaceChannelOrder::BGR ), mDeviceID( 0 ), mDeviceUniqueId()
 {
 	mDevice = device;
 	if( mDevice ) {
-		mDeviceID = device->getUniqueId();
+		mDeviceUniqueId = mDevice->getUniqueId();
+	}
+
+	if( ! mDeviceUniqueId.empty() ) {
+		mDeviceID = videoInput::getDeviceIndexForUniqueId( mDeviceUniqueId );
+		if( mDeviceID < 0 )
+			throw CaptureExcInitFail();
+	}
+	else {
+		int totalDevices = CaptureMgr::instanceVI()->listDevices( true );
+		if( totalDevices <= 0 )
+			throw CaptureExcInitFail();
+		mDeviceID = 0;
+		const char *deviceIdCStr = videoInput::getDeviceUniqueId( mDeviceID );
+		if( deviceIdCStr )
+			mDeviceUniqueId = deviceIdCStr;
 	}
 
 	if( ! CaptureMgr::instanceVI()->setupDevice( mDeviceID, mWidth, mHeight, connection ) )
 		throw CaptureExcInitFail();
 	mWidth = CaptureMgr::instanceVI()->getWidth( mDeviceID );
 	mHeight = CaptureMgr::instanceVI()->getHeight( mDeviceID );
+	if( mDeviceUniqueId.empty() ) {
+		const char *resolvedId = videoInput::getDeviceUniqueId( mDeviceID );
+		if( resolvedId )
+			mDeviceUniqueId = resolvedId;
+	}
 	mIsCapturing = true;
 	mSurfaceCache = std::shared_ptr<SurfaceCache>( new SurfaceCache( mWidth, mHeight, SurfaceChannelOrder::BGR, 4 ) );
 
@@ -178,12 +229,19 @@ CaptureImplDirectShow::CaptureImplDirectShow(int32_t width, int32_t height, cons
 
 CaptureImplDirectShow::~CaptureImplDirectShow()
 {
-	CaptureMgr::instanceVI()->stopDevice( mDeviceID );
+	if( mDeviceID >= 0 )
+		CaptureMgr::instanceVI()->stopDevice( mDeviceID );
 }
 
 void CaptureImplDirectShow::start()
 {
 	if( mIsCapturing ) return;
+
+	if( ! mDeviceUniqueId.empty() ) {
+		int resolvedIndex = videoInput::getDeviceIndexForUniqueId( mDeviceUniqueId );
+		if( resolvedIndex >= 0 )
+			mDeviceID = resolvedIndex;
+	}
 	
 	if( ! CaptureMgr::instanceVI()->setupDevice( mDeviceID, mWidth, mHeight ) )
 		throw CaptureExcInitFail();
@@ -191,6 +249,11 @@ void CaptureImplDirectShow::start()
 		throw CaptureExcInitFail();
 	mWidth = CaptureMgr::instanceVI()->getWidth( mDeviceID );
 	mHeight = CaptureMgr::instanceVI()->getHeight( mDeviceID );
+	if( mDeviceUniqueId.empty() ) {
+		const char *resolvedId = videoInput::getDeviceUniqueId( mDeviceID );
+		if( resolvedId )
+			mDeviceUniqueId = resolvedId;
+	}
 	mIsCapturing = true;
 }
 
@@ -198,7 +261,8 @@ void CaptureImplDirectShow::stop()
 {
 	if( ! mIsCapturing ) return;
 
-	CaptureMgr::instanceVI()->stopDevice( mDeviceID );
+	if( mDeviceID >= 0 )
+		CaptureMgr::instanceVI()->stopDevice( mDeviceID );
 	mIsCapturing = false;
 }
 

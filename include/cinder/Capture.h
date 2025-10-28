@@ -56,6 +56,7 @@
 #endif
 
 #include <map>
+#include <string>
 
 namespace cinder {
 
@@ -65,6 +66,7 @@ class Capture {
   public:
 	class Device;
 	typedef std::shared_ptr<Device> DeviceRef;
+	typedef std::string DeviceIdentifier;
 	
 	#if defined(CINDER_MSW)
 	static CaptureRef	create(int32_t width, int32_t height, PhysicalConnectorType connection, 
@@ -117,12 +119,8 @@ class Capture {
 	static DeviceRef findDeviceByName( const std::string &name );
 	//! Finds the first device whose name contains the string \a nameFragment
 	static DeviceRef findDeviceByNameContains( const std::string &nameFragment );
-
-#if defined( CINDER_COCOA )
-	typedef std::string DeviceIdentifier;
-#else
-	typedef int DeviceIdentifier;
-#endif
+	//! Finds a particular device based on its unique identifier
+	static DeviceRef findDeviceByUniqueId( const DeviceIdentifier &uniqueId );
 
 	// This is an abstract base class for implementing platform specific devices
 	class Device {
@@ -144,9 +142,11 @@ class Capture {
 		//! Returns whether device is front-facing. False implies rear-facing.
 		virtual bool		isFrontFacing() const = 0;
 #endif
+		virtual int getWindowsId() const { return mWindowsId; }
 	 protected:
 		Device() {}
 		std::string		mName;
+		int 			mWindowsId;
 	};
 		
  protected: 

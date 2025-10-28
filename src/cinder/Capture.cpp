@@ -73,6 +73,17 @@ Capture::DeviceRef Capture::findDeviceByNameContains( const string &nameFragment
 	return DeviceRef();
 }
 
+Capture::DeviceRef Capture::findDeviceByUniqueId( const DeviceIdentifier &uniqueId )
+{
+	const vector<DeviceRef> &devices = getDevices();
+	for( vector<DeviceRef>::const_iterator deviceIt = devices.begin(); deviceIt != devices.end(); ++deviceIt ) {
+		if( (*deviceIt)->getUniqueId() == uniqueId )
+			return *deviceIt;
+	}
+
+	return DeviceRef();
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Capture::Obj
 
